@@ -54,32 +54,144 @@ WEBP_QUALITY = "82"
 # the arrow looks unrelated to the label beside it. Forcing a font-family does
 # not help — measured identical glyph widths across the whole stack. Draw it
 # instead: currentColor and a stroke we control match the text on any device.
+# Thin, long and light — one arrow style everywhere (services CTA and all four
+# streaming links). Stroke is ~0.04em, close to the weight of the original
+# fallback glyph, which is the look that was wanted.
 ARROW_SVG = (
-    '<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"'
-    ' style="width:.72em;height:.72em;display:inline-block;'
-    'vertical-align:-.01em;margin-left:.26em">'
-    '<path d="M3.4 12.6 12.6 3.4M5.9 3.4h6.7v6.7" fill="none"'
-    ' stroke="currentColor" stroke-width="2.6" stroke-linecap="square"/></svg>'
+    '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"'
+    ' style="width:1em;height:1em;display:inline-block;'
+    'vertical-align:-.06em;margin-left:.3em">'
+    '<path d="M4.5 19.5 19.5 4.5M11 4.5h8.5V13" fill="none"'
+    ' stroke="currentColor" stroke-width="1" stroke-linecap="butt"/></svg>'
 )
+
+# Content and structural edits to the export, applied in order. Each is an
+# exact string swap so a changed export fails loudly (see the assert below)
+# rather than silently skipping an edit.
+EDITS = [
+    # "AI" and "Production" are separate display:block spans, so PRODUCTION
+    # always fell to its own line. One span keeps them together; the font size
+    # is container-relative (13cqw) so it still fits at every width.
+    (
+        '<span style="display:block;white-space:nowrap">AI</span>\n'
+        '        <span style="display:block;white-space:nowrap">Production</span>',
+        '<span style="display:block;white-space:nowrap">AI Production</span>',
+    ),
+    # Contacts label
+    ("[ Контакты ]", "[ Contact me ]"),
+    # Page numbering labels
+    ("[ 02 — Услуги ]", "[ 02 Услуги ]"),
+    ("<span>[ Virtual Artist ]</span>", "<span>[ 03 — Virtual Artist ]</span>"),
+    # Hooks for the CSS below
+    (
+        '<section style="margin-top:clamp(64px,12vh,150px);width:100vw;',
+        '<section class="af-photos" style="margin-top:clamp(64px,12vh,150px);width:100vw;',
+    ),
+    (
+        '<div style="width:94%;margin-top:clamp(0px,7vh,110px);margin-left:auto;',
+        '<div class="af-services-photo" style="width:94%;margin-top:clamp(0px,7vh,110px);margin-left:auto;',
+    ),
+    (
+        '<h1 style="margin:0;font-size:clamp(38px,13cqw,104px);',
+        '<h1 class="af-hero" style="margin:0;font-size:clamp(38px,13cqw,104px);',
+    ),
+    (
+        '<p style="margin:-0.16em 0 0;max-width:1040px;font-size:clamp(34px,4.6vw,74px);',
+        '<p class="af-statement" style="margin:-0.16em 0 0;max-width:1040px;font-size:clamp(34px,4.6vw,74px);',
+    ),
+    # The price line read as its own headline block: a rule above it, a large
+    # top margin and full-strength ink. Fold it into the Стоимость block as a
+    # secondary note, and let it hold one line on desktop.
+    (
+        '<div style="margin-top:clamp(40px,7vh,80px);border-top:1px solid rgba(10,10,10,0.16);padding-top:clamp(18px,3vh,30px)">',
+        '<div style="margin-top:clamp(24px,4vh,44px)">',
+    ),
+    (
+        '<p style="margin:0;max-width:760px;font-size:clamp(12px,1.15vw,15px);'
+        "font-weight:500;line-height:1.5;letter-spacing:0.04em;text-transform:uppercase;"
+        'color:#0A0A0A;text-wrap:pretty">'
+        "[ Ориентир стоимости в пересчете на 10 сек готового материала : "
+        "от 6 000 до 20 000 ₽ ]</p>",
+        '<p class="af-price-note" style="margin:0;font-size:clamp(11px,0.95vw,13px);'
+        "font-weight:400;line-height:1.5;letter-spacing:0.04em;text-transform:uppercase;"
+        'color:#6B6B68">'
+        "[ Ориентир стоимости в пересчёте на 10 секунд готового материала — "
+        "от 6 000 до 20 000 ₽ ]</p>",
+    ),
+]
 
 # Mobile corrections layered over the export. Both problems are in the design
 # source; fix them in Claude Design when convenient and these become no-ops.
 MOBILE_CSS = """
+/* Page gutter, matching main's own padding. */
+:root { --af-gutter: clamp(20px, 5vw, 80px); }
+
+@media (min-width: 601px) {
+  /* The photo strip is full-bleed, so the first caption started at x=0 with
+     its opening bracket against the window edge. Nudge only this caption; the
+     photo itself stays flush left. */
+  .af-photos figure:first-child figcaption { padding-left: 16px; }
+
+  /* Hold the price note on one line — it broke before "20 000 ₽ ]". */
+  .af-price-note { white-space: nowrap; }
+
+  /* [ Statement ] and the phrase beside it: measured cap-height tops were
+     already within 1.5px (the export's -0.16em was optical alignment), so this
+     is a fine correction to exact, plus the small rightward offset. */
+  .af-statement {
+    margin-top: -0.137em !important;
+    padding-left: clamp(10px, 1vw, 28px);
+  }
+}
+
 @media (max-width: 600px) {
-  /* The image grid goes full-bleed via an INLINE style
-     (width:100vw; margin-left:calc(50% - 50vw)), cancelling main's 20px
-     gutter. Its figcaptions inherit that, so caption text sat hard against the
-     screen edge while every other line started at 20px. Drop the bleed on
-     phones so images and captions share the page gutter — !important is
-     required to beat the inline style. */
-  main > section:has(> figure) {
-    width: auto !important;
-    margin-left: 0 !important;
-    margin-right: 0 !important;
-    /* The grid's own minmax(170px) no longer fits twice once 40px of gutter is
-       taken back, which would silently collapse it to one column. Lower the
-       floor to keep the designed two-up layout. */
-    grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr)) !important;
+  /* "AI PRODUCTION" is the longest line and needs 7.42em against the 7.69em
+     the container gives at 13cqw — so it fits at any width, but only while the
+     size stays container-relative. The export's clamp() floor of 38px stops it
+     shrinking below ~292px of container and would overflow on a 320px phone.
+     Drop the floor; at 375px this changes nothing (13cqw = 43.6px). */
+  .af-hero { font-size: min(13cqw, 104px) !important; }
+
+  /* Three full-bleed photos stacked one per row, captions set inside the
+     image instead of underneath. The section is already full-bleed via an
+     inline width:100vw, so it only needs collapsing to a single column. */
+  .af-photos {
+    grid-template-columns: 1fr !important;
+    gap: clamp(10px, 2vh, 18px) !important;
+  }
+  .af-photos figure { position: relative; gap: 0 !important; }
+  .af-photos figure > div,
+  .af-photos figure > a { position: relative; }
+
+  /* Scrim: the captions are white and two of these photos are pale along the
+     bottom edge, where the text would otherwise be unreadable. */
+  .af-photos figure > div::after,
+  .af-photos figure > a::after {
+    content: "";
+    position: absolute;
+    inset: auto 0 0 0;
+    height: 42%;
+    background: linear-gradient(to top, rgba(0,0,0,0.5), rgba(0,0,0,0));
+    pointer-events: none;
+  }
+
+  /* Caption sits inside the photo, bottom-left, on the same vertical line as
+     the body copy above it. */
+  .af-photos figcaption {
+    position: absolute;
+    left: var(--af-gutter);
+    right: var(--af-gutter);
+    bottom: clamp(14px, 2.4vh, 22px);
+    z-index: 2;
+    color: #FFFFFF !important;
+  }
+  .af-photos figcaption a { color: #FFFFFF; border-bottom-color: rgba(255,255,255,0.5); }
+
+  /* Services photo runs to the right edge of the viewport, keeping the air on
+     the left so it still reads as deliberately pushed right. */
+  .af-services-photo {
+    width: calc(94% + var(--af-gutter)) !important;
+    margin-right: calc(-1 * var(--af-gutter)) !important;
   }
 
   /* Touch targets: every link was 12-27px tall against the 44px minimum.
@@ -195,6 +307,15 @@ def main():
         saved_before += len(raw)
         saved_after += webp.stat().st_size
         extracted.append((webp.name, len(raw), webp.stat().st_size))
+
+    for old, new in EDITS:
+        if old not in template:
+            sys.exit(
+                "export no longer contains an expected fragment, so an edit "
+                f"would be silently skipped:\n  {old[:90]}..."
+            )
+        template = template.replace(old, new, 1)
+    print(f"  content/structure edits applied: {len(EDITS)}")
 
     # Drop the space too — an inline SVG separated by a space can wrap onto its
     # own line, leaving an orphaned arrow under the label.
