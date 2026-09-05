@@ -48,6 +48,70 @@ NAMES = {
 
 WEBP_QUALITY = "82"
 
+# The bundled Archivo webfont is subset to Latin + Cyrillic, so U+2197 (↗) has
+# no glyph in any font in the stack and falls through to a system symbol font.
+# That fallback renders thin and ignores the surrounding font-weight: 800, so
+# the arrow looks unrelated to the label beside it. Forcing a font-family does
+# not help — measured identical glyph widths across the whole stack. Draw it
+# instead: currentColor and a stroke we control match the text on any device.
+ARROW_SVG = (
+    '<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"'
+    ' style="width:.72em;height:.72em;display:inline-block;'
+    'vertical-align:-.01em;margin-left:.26em">'
+    '<path d="M3.4 12.6 12.6 3.4M5.9 3.4h6.7v6.7" fill="none"'
+    ' stroke="currentColor" stroke-width="2.6" stroke-linecap="square"/></svg>'
+)
+
+# Mobile corrections layered over the export. Both problems are in the design
+# source; fix them in Claude Design when convenient and these become no-ops.
+MOBILE_CSS = """
+@media (max-width: 600px) {
+  /* The image grid goes full-bleed via an INLINE style
+     (width:100vw; margin-left:calc(50% - 50vw)), cancelling main's 20px
+     gutter. Its figcaptions inherit that, so caption text sat hard against the
+     screen edge while every other line started at 20px. Drop the bleed on
+     phones so images and captions share the page gutter — !important is
+     required to beat the inline style. */
+  main > section:has(> figure) {
+    width: auto !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    /* The grid's own minmax(170px) no longer fits twice once 40px of gutter is
+       taken back, which would silently collapse it to one column. Lower the
+       floor to keep the designed two-up layout. */
+    grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr)) !important;
+  }
+
+  /* Touch targets: every link was 12-27px tall against the 44px minimum.
+     An invisible overlay expands the hit area without moving any layout. */
+  a { position: relative; }
+  a::after {
+    content: "";
+    position: absolute;
+    left: -6px;
+    right: -6px;
+    top: 50%;
+    transform: translateY(-50%);
+    height: max(100%, 44px);
+  }
+
+  /* Exception: the artist page's streaming list is a flex column with only
+     6px between rows, so 44px overlays would overlap each other and cause
+     mis-taps. Those rows get real height instead. */
+  nav a { padding-block: 10px; }
+  nav a::after { content: none; }
+}
+@media (max-width: 480px) {
+  /* Header is 1fr auto 1fr: the middle label IS centred on the viewport, but
+     "ARINA FRANCHUK" nearly fills the left column while "CONTACT" leaves its
+     column half empty, so the gaps read 22px / 72px and the label looks glued
+     to the brand. Hide the label at this width — the H1 immediately below
+     repeats it verbatim. visibility (not display) keeps the grid column, so
+     the brand stays left and contact stays right. */
+  header span { visibility: hidden; }
+}
+"""
+
 
 def json_for_html(obj):
     """Serialise so the result is safe to embed inside a <script> tag."""
@@ -132,10 +196,26 @@ def main():
         saved_after += webp.stat().st_size
         extracted.append((webp.name, len(raw), webp.stat().st_size))
 
+    # Drop the space too — an inline SVG separated by a space can wrap onto its
+    # own line, leaving an orphaned arrow under the label.
+    arrows = template.count(" ↗")
+    template = template.replace(" ↗", ARROW_SVG)
+    if template.count("↗"):
+        print(f"  warning: {template.count(chr(0x2197))} arrow(s) not in the"
+              " expected ' ↗' form, left as text")
+
     # Meta tags also go into the template head: the runtime replaces the whole
     # document, so a JS-executing crawler sees the template's head, not ours.
+    # The mobile CSS must land here too — the shell's <style> is discarded with
+    # the rest of the shell document when the app mounts.
     template = template.replace(
-        '<meta charset="utf-8">', '<meta charset="utf-8">\n' + meta_block(""), 1
+        '<meta charset="utf-8">',
+        '<meta charset="utf-8">\n'
+        + meta_block("")
+        + "<style>"
+        + MOBILE_CSS
+        + "</style>\n",
+        1,
     )
 
     out = html[: man_m.start(2)] + json_for_html(manifest) + html[man_m.end(2):]
@@ -151,6 +231,7 @@ def main():
 
     OUT.write_text(out, encoding="utf-8")
 
+    print(f"  arrows redrawn as SVG: {arrows}")
     for name, before, after in extracted:
         print(f"  {name:28} {before/1024:7.0f} KB -> {after/1024:6.0f} KB")
     print(f"\nimages: {saved_before/1024/1024:.2f} MB -> {saved_after/1024/1024:.2f} MB")
