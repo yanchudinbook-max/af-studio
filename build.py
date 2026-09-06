@@ -155,9 +155,11 @@ MOBILE_CSS = """
   /* Three full-bleed photos stacked one per row, captions set inside the
      image instead of underneath. The section is already full-bleed via an
      inline width:100vw, so it only needs collapsing to a single column. */
+  /* gap:0 — any gap shows the light page background as a band across the full
+     width between the photos. They butt directly against each other. */
   .af-photos {
     grid-template-columns: 1fr !important;
-    gap: clamp(10px, 2vh, 18px) !important;
+    gap: 0 !important;
   }
   .af-photos figure { position: relative; gap: 0 !important; }
   .af-photos figure > div,
